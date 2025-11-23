@@ -1,0 +1,744 @@
+-- ============================================
+-- VIEWS
+-- ============================================
+
+-- View 1: All Movie Reviews with User Details
+CREATE VIEW movie_reviews_view AS
+SELECT 
+    r.review_id,
+    u.username,
+    u.name AS user_name,
+    m.name AS movie_name,
+    m.poster_url,
+    r.rating,
+    r.review_text,
+    r.date AS review_date,
+    r.likes_count
+FROM Review r
+JOIN User u ON r.user_id = u.user_id
+JOIN Movie m ON r.movie_id = m.movie_id
+WHERE r.movie_id IS NOT NULL;
+
+-- View 2: Popular Movies with Average Ratings and Review Count
+CREATE VIEW popular_movies AS
+SELECT 
+    m.movie_id,
+    m.name,
+    m.release_date,
+    m.language,
+    m.age_rating,
+    m.poster_url,
+    m.total_reviews,
+    m.ratings AS avg_rating,
+    m.box_office
+FROM Movie m
+WHERE m.total_reviews > 0
+ORDER BY m.ratings DESC, m.total_reviews DESC;
+
+-- View 3: TV Show Episode Reviews with Details
+CREATE VIEW episode_reviews_view AS
+SELECT 
+    r.review_id,
+    u.username,
+    u.name AS user_name,
+    s.name AS show_name,
+    e.title AS episode_title,
+    e.season_number,
+    e.episode_no,
+    r.rating,
+    r.review_text,
+    r.date AS review_date,
+    r.likes_count
+FROM Review r
+JOIN User u ON r.user_id = u.user_id
+JOIN Episode e ON r.episode_id = e.episode_id
+JOIN tvshow s ON e.show_id = s.show_id
+WHERE r.episode_id IS NOT NULL;
+
+-- View 4: Movies with Complete Details (Genres, Directors, Actors)
+CREATE VIEW movie_details_view AS
+SELECT 
+    m.movie_id,
+    m.name AS movie_name,
+    m.release_date,
+    m.total_duration,
+    m.ratings,
+    m.total_reviews,
+    m.poster_url,
+    m.box_office,
+    m.age_rating,
+    m.language,
+    GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') AS genres,
+    GROUP_CONCAT(DISTINCT d.name ORDER BY d.name SEPARATOR ', ') AS directors,
+    GROUP_CONCAT(DISTINCT a.name ORDER BY a.name SEPARATOR ', ') AS actors
+FROM Movie m
+LEFT JOIN Movie_Genre mg ON m.movie_id = mg.movie_id
+LEFT JOIN Genre g ON mg.genre_id = g.genre_id
+LEFT JOIN Movie_Director md ON m.movie_id = md.movie_id
+LEFT JOIN Director d ON md.director_id = d.director_id
+LEFT JOIN Movie_Actor ma ON m.movie_id = ma.movie_id
+LEFT JOIN Actor a ON ma.actor_id = a.actor_id
+GROUP BY m.movie_id, m.name, m.release_date, m.total_duration, m.ratings, 
+         m.total_reviews, m.poster_url, m.box_office, m.age_rating, m.language;
+
+-- View 5: TV Shows with Complete Details
+CREATE VIEW show_details_view AS
+SELECT 
+    s.show_id,
+    s.name AS show_name,
+    s.num_of_seasons,
+    s.num_of_episodes,
+    s.release_date,
+    s.status,
+    s.ratings,
+    s.poster_url,
+    s.age_rating,
+    s.language,
+    GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') AS genres
+FROM tvshow s
+LEFT JOIN Show_Genre sg ON s.show_id = sg.show_id
+LEFT JOIN Genre g ON sg.genre_id = g.genre_id
+GROUP BY s.show_id, s.name, s.num_of_seasons, s.num_of_episodes, 
+         s.release_date, s.status, s.ratings, s.poster_url, s.age_rating, s.language;
+
+-- View 6: User Statistics
+CREATE VIEW user_stats_view AS
+SELECT 
+    u.user_id,
+    u.username,
+    u.name,
+    u.email,
+    COUNT(DISTINCT r.review_id) AS total_reviews,
+    AVG(r.rating) AS avg_rating_given,
+    COUNT(DISTINCT CASE WHEN r.movie_id IS NOT NULL THEN r.movie_id END) AS movies_reviewed,
+    COUNT(DISTINCT CASE WHEN r.episode_id IS NOT NULL THEN r.episode_id END) AS episodes_reviewed,
+    SUM(r.likes_count) AS total_likes_received
+FROM User u
+LEFT JOIN Review r ON u.user_id = r.user_id
+GROUP BY u.user_id, u.username, u.name, u.email;
+
+-- View 7: Top Rated Shows
+CREATE VIEW top_rated_shows AS
+SELECT 
+    s.show_id,
+    s.name,
+    s.num_of_seasons,
+    s.ratings,
+    s.status,
+    s.poster_url,
+    COUNT(DISTINCT e.episode_id) AS total_episodes,
+    COUNT(DISTINCT r.review_id) AS total_reviews
+FROM tvshow s
+LEFT JOIN Episode e ON s.show_id = e.show_id
+LEFT JOIN Review r ON e.episode_id = r.episode_id
+GROUP BY s.show_id, s.name, s.num_of_seasons, s.ratings, s.status, s.poster_url
+HAVING total_reviews > 0
+ORDER BY s.ratings DESC;
+
+-- View 8: Recent Activity Feed (All Reviews)
+CREATE VIEW recent_activity_view AS
+SELECT 
+    r.review_id,
+    u.username,
+    u.name AS user_name,
+    COALESCE(m.name, CONCAT(s.name, ' - ', e.title)) AS content_name,
+    CASE 
+        WHEN r.movie_id IS NOT NULL THEN 'Movie'
+        ELSE 'TV Show'
+    END AS content_type,
+    r.rating,
+    r.review_text,
+    r.date AS review_date,
+    r.likes_count
+FROM Review r
+JOIN User u ON r.user_id = u.user_id
+LEFT JOIN Movie m ON r.movie_id = m.movie_id
+LEFT JOIN Episode e ON r.episode_id = e.episode_id
+LEFT JOIN tvshow s ON e.show_id = s.show_id
+ORDER BY r.date DESC;
+
+-- ============================================
+-- TRIGGERS
+-- ============================================
+
+-- Trigger 1: Update Movie Rating and Review Count After Insert
+DELIMITER //
+CREATE TRIGGER update_movie_stats_insert
+AFTER INSERT ON Review
+FOR EACH ROW
+BEGIN
+    IF NEW.movie_id IS NOT NULL THEN
+        UPDATE Movie
+        SET ratings = (
+            SELECT AVG(rating)
+            FROM Review
+            WHERE movie_id = NEW.movie_id
+        ),
+        total_reviews = (
+            SELECT COUNT(*)
+            FROM Review
+            WHERE movie_id = NEW.movie_id
+        )
+        WHERE movie_id = NEW.movie_id;
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 2: Update Movie Stats After Review Update
+DELIMITER //
+CREATE TRIGGER update_movie_stats_update
+AFTER UPDATE ON Review
+FOR EACH ROW
+BEGIN
+    IF NEW.movie_id IS NOT NULL THEN
+        UPDATE Movie
+        SET ratings = (
+            SELECT AVG(rating)
+            FROM Review
+            WHERE movie_id = NEW.movie_id
+        ),
+        total_reviews = (
+            SELECT COUNT(*)
+            FROM Review
+            WHERE movie_id = NEW.movie_id
+        )
+        WHERE movie_id = NEW.movie_id;
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 3: Update Movie Stats After Review Delete
+DELIMITER //
+CREATE TRIGGER update_movie_stats_delete
+AFTER DELETE ON Review
+FOR EACH ROW
+BEGIN
+    IF OLD.movie_id IS NOT NULL THEN
+        UPDATE Movie
+        SET ratings = COALESCE((
+            SELECT AVG(rating)
+            FROM Review
+            WHERE movie_id = OLD.movie_id
+        ), 0.00),
+        total_reviews = (
+            SELECT COUNT(*)
+            FROM Review
+            WHERE movie_id = OLD.movie_id
+        )
+        WHERE movie_id = OLD.movie_id;
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 4: Update TV Show Rating After Episode Review Insert
+DELIMITER //
+CREATE TRIGGER update_show_rating_insert
+AFTER INSERT ON Review
+FOR EACH ROW
+BEGIN
+    IF NEW.episode_id IS NOT NULL THEN
+        UPDATE tvshow s
+        SET s.ratings = (
+            SELECT AVG(r.rating)
+            FROM Review r
+            JOIN Episode e ON r.episode_id = e.episode_id
+            WHERE e.show_id = (
+                SELECT show_id FROM Episode WHERE episode_id = NEW.episode_id
+            )
+        )
+        WHERE s.show_id = (
+            SELECT show_id FROM Episode WHERE episode_id = NEW.episode_id
+        );
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 5: Update TV Show Rating After Episode Review Update
+DELIMITER //
+CREATE TRIGGER update_show_rating_update
+AFTER UPDATE ON Review
+FOR EACH ROW
+BEGIN
+    IF NEW.episode_id IS NOT NULL THEN
+        UPDATE tvshow s
+        SET s.ratings = (
+            SELECT AVG(r.rating)
+            FROM Review r
+            JOIN Episode e ON r.episode_id = e.episode_id
+            WHERE e.show_id = (
+                SELECT show_id FROM Episode WHERE episode_id = NEW.episode_id
+            )
+        )
+        WHERE s.show_id = (
+            SELECT show_id FROM Episode WHERE episode_id = NEW.episode_id
+        );
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 6: Update TV Show Rating After Episode Review Delete
+DELIMITER //
+CREATE TRIGGER update_show_rating_delete
+AFTER DELETE ON Review
+FOR EACH ROW
+BEGIN
+    IF OLD.episode_id IS NOT NULL THEN
+        UPDATE tvshow s
+        SET s.ratings = COALESCE((
+            SELECT AVG(r.rating)
+            FROM Review r
+            JOIN Episode e ON r.episode_id = e.episode_id
+            WHERE e.show_id = (
+                SELECT show_id FROM Episode WHERE episode_id = OLD.episode_id
+            )
+        ), 0.00)
+        WHERE s.show_id = (
+            SELECT show_id FROM Episode WHERE episode_id = OLD.episode_id
+        );
+    END IF;
+END//
+DELIMITER ;
+
+-- Trigger 7: Auto-set Review Date if Not Provided
+DELIMITER //
+CREATE TRIGGER set_review_date
+BEFORE INSERT ON Review
+FOR EACH ROW
+BEGIN
+    IF NEW.date IS NULL THEN
+        SET NEW.date = CURDATE();
+    END IF;
+END//
+DELIMITER ;
+
+-- OPTIONAL: Trigger to validate review constraint (movie XOR episode)
+DELIMITER //
+CREATE TRIGGER validate_review_type
+BEFORE INSERT ON Review
+FOR EACH ROW
+BEGIN
+    IF (NEW.movie_id IS NOT NULL AND NEW.episode_id IS NOT NULL) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'A review cannot be for both a movie and an episode';
+    END IF;
+    
+    IF (NEW.movie_id IS NULL AND NEW.episode_id IS NULL) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'A review must be for either a movie or an episode';
+    END IF;
+END//
+DELIMITER ;
+
+-- ============================================
+-- STORED PROCEDURES
+-- ============================================
+
+-- Procedure 1: Add Movie Review
+DELIMITER //
+CREATE PROCEDURE add_movie_review(
+    IN p_user_id INT,
+    IN p_movie_id INT,
+    IN p_rating DECIMAL(2,1),
+    IN p_review_text TEXT
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error: Review could not be added' AS error_message;
+    END;
+    
+    START TRANSACTION;
+    INSERT INTO Review (user_id, movie_id, date, rating, review_text)
+    VALUES (p_user_id, p_movie_id, CURDATE(), p_rating, p_review_text);
+    COMMIT;
+    
+    SELECT 'Review added successfully' AS message, LAST_INSERT_ID() AS review_id;
+END//
+DELIMITER ;
+
+-- Procedure 2: Add Episode Review
+DELIMITER //
+CREATE PROCEDURE add_episode_review(
+    IN p_user_id INT,
+    IN p_episode_id INT,
+    IN p_rating DECIMAL(2,1),
+    IN p_review_text TEXT
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error: Review could not be added' AS error_message;
+    END;
+    
+    START TRANSACTION;
+    INSERT INTO Review (user_id, episode_id, date, rating, review_text)
+    VALUES (p_user_id, p_episode_id, CURDATE(), p_rating, p_review_text);
+    COMMIT;
+    
+    SELECT 'Episode review added successfully' AS message, LAST_INSERT_ID() AS review_id;
+END//
+DELIMITER ;
+
+-- Procedure 3: Get All User Reviews
+DELIMITER //
+CREATE PROCEDURE get_user_reviews(IN p_user_id INT)
+BEGIN
+    SELECT 
+        r.review_id,
+        COALESCE(m.name, CONCAT(s.name, ' - S', e.season_number, 'E', e.episode_no)) AS content_name,
+        CASE 
+            WHEN r.movie_id IS NOT NULL THEN 'Movie'
+            ELSE 'TV Show Episode'
+        END AS content_type,
+        r.rating,
+        r.review_text,
+        r.date,
+        r.likes_count
+    FROM Review r
+    LEFT JOIN Movie m ON r.movie_id = m.movie_id
+    LEFT JOIN Episode e ON r.episode_id = e.episode_id
+    LEFT JOIN tvshow s ON e.show_id = s.show_id
+    WHERE r.user_id = p_user_id
+    ORDER BY r.date DESC;
+END//
+DELIMITER ;
+
+-- Procedure 4: Search Movies by Genre
+DELIMITER //
+CREATE PROCEDURE search_movies_by_genre(IN p_genre_name VARCHAR(100))
+BEGIN
+    SELECT 
+        m.movie_id,
+        m.name,
+        m.release_date,
+        m.ratings,
+        m.total_reviews,
+        m.language,
+        m.poster_url
+    FROM Movie m
+    JOIN Movie_Genre mg ON m.movie_id = mg.movie_id
+    JOIN Genre g ON mg.genre_id = g.genre_id
+    WHERE g.name = p_genre_name
+    ORDER BY m.ratings DESC, m.total_reviews DESC;
+END//
+DELIMITER ;
+
+-- Procedure 5: Get Movies by Director
+DELIMITER //
+CREATE PROCEDURE get_movies_by_director(IN p_director_name VARCHAR(100))
+BEGIN
+    SELECT 
+        m.movie_id,
+        m.name,
+        m.release_date,
+        m.ratings,
+        m.total_reviews,
+        m.poster_url,
+        d.name AS director_name,
+        d.profile_image_url AS director_image
+    FROM Movie m
+    JOIN Movie_Director md ON m.movie_id = md.movie_id
+    JOIN Director d ON md.director_id = d.director_id
+    WHERE d.name LIKE CONCAT('%', p_director_name, '%')
+    ORDER BY m.release_date DESC;
+END//
+DELIMITER ;
+
+-- Procedure 6: Get Movies by Actor
+DELIMITER //
+CREATE PROCEDURE get_movies_by_actor(IN p_actor_name VARCHAR(100))
+BEGIN
+    SELECT 
+        m.movie_id,
+        m.name,
+        m.release_date,
+        m.ratings,
+        m.total_reviews,
+        m.poster_url,
+        a.name AS actor_name,
+        a.profile_image_url AS actor_image,
+        ma.character_name
+    FROM Movie m
+    JOIN Movie_Actor ma ON m.movie_id = ma.movie_id
+    JOIN Actor a ON ma.actor_id = a.actor_id
+    WHERE a.name LIKE CONCAT('%', p_actor_name, '%')
+    ORDER BY m.release_date DESC;
+END//
+DELIMITER ;
+
+-- Procedure 7: Get TV Show Details with All Episodes
+DELIMITER //
+CREATE PROCEDURE get_show_details(IN p_show_id INT)
+BEGIN
+    -- Show basic info
+    SELECT 
+        s.*,
+        GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') AS genres
+    FROM tvshow s
+    LEFT JOIN Show_Genre sg ON s.show_id = sg.show_id
+    LEFT JOIN Genre g ON sg.genre_id = g.genre_id
+    WHERE s.show_id = p_show_id
+    GROUP BY s.show_id;
+    
+    -- All episodes with review stats
+    SELECT 
+        e.episode_id,
+        e.season_number,
+        e.episode_no,
+        e.title,
+        e.ep_descr,
+        e.duration,
+        e.air_date,
+        COUNT(r.review_id) AS review_count,
+        AVG(r.rating) AS avg_rating
+    FROM Episode e
+    LEFT JOIN Review r ON e.episode_id = r.episode_id
+    WHERE e.show_id = p_show_id
+    GROUP BY e.episode_id, e.season_number, e.episode_no, e.title, e.ep_descr, e.duration, e.air_date
+    ORDER BY e.season_number, e.episode_no;
+END//
+DELIMITER ;
+
+-- Procedure 8: Advanced Movie Search
+DELIMITER //
+CREATE PROCEDURE advanced_movie_search(
+    IN p_title VARCHAR(255),
+    IN p_genre VARCHAR(100),
+    IN p_min_rating DECIMAL(3,2),
+    IN p_language VARCHAR(50),
+    IN p_min_year INT,
+    IN p_max_year INT
+)
+BEGIN
+    SELECT DISTINCT
+        m.movie_id,
+        m.name,
+        m.release_date,
+        m.ratings,
+        m.total_reviews,
+        m.language,
+        m.poster_url,
+        GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') AS genres
+    FROM Movie m
+    LEFT JOIN Movie_Genre mg ON m.movie_id = mg.movie_id
+    LEFT JOIN Genre g ON mg.genre_id = g.genre_id
+    WHERE (p_title IS NULL OR m.name LIKE CONCAT('%', p_title, '%'))
+      AND (p_genre IS NULL OR g.name = p_genre)
+      AND (p_min_rating IS NULL OR m.ratings >= p_min_rating)
+      AND (p_language IS NULL OR m.language = p_language)
+      AND (p_min_year IS NULL OR YEAR(m.release_date) >= p_min_year)
+      AND (p_max_year IS NULL OR YEAR(m.release_date) <= p_max_year)
+    GROUP BY m.movie_id, m.name, m.release_date, m.ratings, m.total_reviews, m.language, m.poster_url
+    ORDER BY m.ratings DESC, m.total_reviews DESC
+    LIMIT 50;
+END//
+DELIMITER ;
+
+-- Procedure 9: Get User Statistics
+DELIMITER //
+CREATE PROCEDURE get_user_statistics(IN p_user_id INT)
+BEGIN
+    SELECT 
+        u.user_id,
+        u.username,
+        u.name,
+        u.email,
+        COUNT(DISTINCT r.review_id) AS total_reviews,
+        AVG(r.rating) AS avg_rating_given,
+        COUNT(DISTINCT CASE WHEN r.movie_id IS NOT NULL THEN r.movie_id END) AS movies_reviewed,
+        COUNT(DISTINCT CASE WHEN r.episode_id IS NOT NULL THEN r.episode_id END) AS episodes_reviewed,
+        SUM(r.likes_count) AS total_likes_received,
+        MIN(r.date) AS first_review_date,
+        MAX(r.date) AS last_review_date
+    FROM User u
+    LEFT JOIN Review r ON u.user_id = r.user_id
+    WHERE u.user_id = p_user_id
+    GROUP BY u.user_id, u.username, u.name, u.email;
+END//
+DELIMITER ;
+
+-- Procedure 10: Get Top Movies by Box Office
+DELIMITER //
+CREATE PROCEDURE get_top_grossing_movies(IN p_limit INT)
+BEGIN
+    SELECT 
+        m.movie_id,
+        m.name,
+        m.box_office,
+        m.release_date,
+        m.ratings,
+        m.total_reviews,
+        m.poster_url,
+        GROUP_CONCAT(DISTINCT d.name ORDER BY d.name SEPARATOR ', ') AS directors
+    FROM Movie m
+    LEFT JOIN Movie_Director md ON m.movie_id = md.movie_id
+    LEFT JOIN Director d ON md.director_id = d.director_id
+    WHERE m.box_office IS NOT NULL
+    GROUP BY m.movie_id, m.name, m.box_office, m.release_date, m.ratings, m.total_reviews, m.poster_url
+    ORDER BY m.box_office DESC
+    LIMIT p_limit;
+END//
+DELIMITER ;
+
+-- Procedure 11: Get Trending Movies (recently reviewed with high ratings)
+DELIMITER //
+CREATE PROCEDURE get_trending_movies(IN p_days INT)
+BEGIN
+    SELECT 
+        m.movie_id,
+        m.name,
+        m.ratings,
+        m.poster_url,
+        COUNT(r.review_id) AS recent_review_count,
+        AVG(r.rating) AS recent_avg_rating
+    FROM Movie m
+    JOIN Review r ON m.movie_id = r.movie_id
+    WHERE r.date >= DATE_SUB(CURDATE(), INTERVAL p_days DAY)
+    GROUP BY m.movie_id, m.name, m.ratings, m.poster_url
+    HAVING recent_review_count >= 2
+    ORDER BY recent_avg_rating DESC, recent_review_count DESC
+    LIMIT 20;
+END//
+DELIMITER ;
+
+-- ============================================
+-- FUNCTIONS
+-- ============================================
+
+-- Function 1: Get User's Average Rating
+DELIMITER //
+CREATE FUNCTION get_user_avg_rating(p_user_id INT)
+RETURNS DECIMAL(3,2)
+DETERMINISTIC
+BEGIN
+    DECLARE avg_rating DECIMAL(3,2);
+    
+    SELECT COALESCE(AVG(rating), 0.00) INTO avg_rating
+    FROM Review
+    WHERE user_id = p_user_id;
+    
+    RETURN avg_rating;
+END//
+DELIMITER ;
+
+-- Function 2: Count User Reviews
+DELIMITER //
+CREATE FUNCTION count_user_reviews(p_user_id INT)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE review_count INT;
+    
+    SELECT COUNT(*) INTO review_count
+    FROM Review
+    WHERE user_id = p_user_id;
+    
+    RETURN review_count;
+END//
+DELIMITER ;
+
+-- Function 3: Check if User Reviewed Movie
+DELIMITER //
+CREATE FUNCTION has_reviewed_movie(p_user_id INT, p_movie_id INT)
+RETURNS BOOLEAN
+DETERMINISTIC
+BEGIN
+    DECLARE reviewed BOOLEAN;
+    
+    SELECT EXISTS(
+        SELECT 1 FROM Review 
+        WHERE user_id = p_user_id AND movie_id = p_movie_id
+    ) INTO reviewed;
+    
+    RETURN reviewed;
+END//
+DELIMITER ;
+
+-- Function 4: Get Total Likes for User's Reviews
+DELIMITER //
+CREATE FUNCTION get_user_total_likes(p_user_id INT)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE total_likes INT;
+    
+    SELECT COALESCE(SUM(likes_count), 0) INTO total_likes
+    FROM Review
+    WHERE user_id = p_user_id;
+    
+    RETURN total_likes;
+END//
+DELIMITER ;
+
+-- Function 5: Calculate Movie Popularity Score
+DELIMITER //
+CREATE FUNCTION calculate_movie_popularity(p_movie_id INT)
+RETURNS DECIMAL(5,2)
+DETERMINISTIC
+BEGIN
+    DECLARE popularity DECIMAL(5,2);
+    DECLARE avg_rating DECIMAL(3,2);
+    DECLARE review_count INT;
+    
+    SELECT ratings, total_reviews
+    INTO avg_rating, review_count
+    FROM Movie
+    WHERE movie_id = p_movie_id;
+    
+    -- Popularity = (rating * 0.7) + (log(reviews+1) * 3)
+    SET popularity = (COALESCE(avg_rating, 0) * 0.7) + (LOG10(COALESCE(review_count, 0) + 1) * 3);
+    
+    RETURN COALESCE(popularity, 0.00);
+END//
+DELIMITER ;
+
+-- Function 6: Count Movies Reviewed by User
+DELIMITER //
+CREATE FUNCTION count_movies_reviewed(p_user_id INT)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE movie_count INT;
+    
+    SELECT COUNT(DISTINCT movie_id) INTO movie_count
+    FROM Review
+    WHERE user_id = p_user_id AND movie_id IS NOT NULL;
+    
+    RETURN COALESCE(movie_count, 0);
+END//
+DELIMITER ;
+
+-- Function 7: Count Episodes Reviewed by User
+DELIMITER //
+CREATE FUNCTION count_episodes_reviewed(p_user_id INT)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE episode_count INT;
+    
+    SELECT COUNT(DISTINCT episode_id) INTO episode_count
+    FROM Review
+    WHERE user_id = p_user_id AND episode_id IS NOT NULL;
+    
+    RETURN COALESCE(episode_count, 0);
+END//
+DELIMITER ;
+
+-- Function 8: Check if User Reviewed Episode
+DELIMITER //
+CREATE FUNCTION has_reviewed_episode(p_user_id INT, p_episode_id INT)
+RETURNS BOOLEAN
+DETERMINISTIC
+BEGIN
+    DECLARE reviewed BOOLEAN;
+    
+    SELECT EXISTS(
+        SELECT 1 FROM Review 
+        WHERE user_id = p_user_id AND episode_id = p_episode_id
+    ) INTO reviewed;
+    
+    RETURN reviewed;
+END//
+DELIMITER ;

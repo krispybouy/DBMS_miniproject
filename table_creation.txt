@@ -1,0 +1,211 @@
+-- ============================================
+-- TABLE DEFINITIONS
+-- ============================================
+
+-- 1. User Table
+CREATE TABLE User (
+    user_id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    name VARCHAR(100),
+    dob DATE,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    ph_no VARCHAR(20),
+    address VARCHAR(255)
+    
+    -- OPTIONAL: Add creation timestamp
+    -- , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    
+    -- OPTIONAL: Add last login tracking
+    -- , last_login TIMESTAMP NULL
+);
+
+-- 2. Movie Table
+CREATE TABLE Movie (
+    movie_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    total_duration INT,
+    descr TEXT,
+    box_office BIGINT,
+    release_date DATE,
+    age_rating VARCHAR(10),
+    language VARCHAR(50),
+    ratings DECIMAL(3,2) DEFAULT 0.00,
+    poster_url VARCHAR(500),
+    total_reviews INT DEFAULT 0
+);
+
+-- 3. Show Table (TV Shows)
+CREATE TABLE tvshow (
+    show_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    num_of_seasons INT,
+    num_of_episodes INT,
+    descr TEXT,
+    release_date DATE,
+    age_rating VARCHAR(10),
+    language VARCHAR(50),
+    ratings DECIMAL(3,2) DEFAULT 0.00,    
+    poster_url VARCHAR(500),
+    status VARCHAR(20) DEFAULT 'Ongoing' -- 'Ongoing', 'Completed', 'Cancelled'
+);
+
+-- 4. Episode Table
+CREATE TABLE Episode (
+    episode_id INT PRIMARY KEY AUTO_INCREMENT,
+    show_id INT NOT NULL,
+    season_number INT,
+    episode_no INT,
+    ep_descr TEXT,
+    duration INT,
+    air_date DATE,
+    FOREIGN KEY (show_id) REFERENCES tvshow (show_id) ON DELETE CASCADE,
+    title VARCHAR(255)
+);
+
+-- 5. Review Table
+CREATE TABLE Review (
+    review_id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    movie_id INT,
+    episode_id INT,
+    date DATE,
+    rating DECIMAL(2,1) CHECK (rating >= 0 AND rating <= 5),
+    review_text TEXT,
+    FOREIGN KEY (user_id) REFERENCES User(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (episode_id) REFERENCES Episode(episode_id) ON DELETE CASCADE,
+    likes_count INT DEFAULT 0,
+    UNIQUE KEY unique_user_episode (user_id, episode_id),
+    CHECK ((movie_id IS NOT NULL AND episode_id IS NULL) OR (movie_id IS NULL AND episode_id IS NOT NULL))
+);
+
+-- 6. Genre Table
+CREATE TABLE Genre (
+    genre_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT
+);
+
+-- 7. Actor Table
+CREATE TABLE Actor (
+    actor_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    dob DATE,
+    gender VARCHAR(10),
+    bio TEXT,
+    profile_image_url VARCHAR(500)
+);
+
+-- 8. Director Table
+CREATE TABLE Director (
+    director_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    dob DATE,
+    gender VARCHAR(10),
+    bio TEXT,
+    profile_image_url VARCHAR(500),
+    nationality VARCHAR(50)
+);
+
+-- 9. Movie_Director (Many-to-Many)
+CREATE TABLE Movie_Director (
+    movie_id INT NOT NULL,
+    director_id INT NOT NULL,
+    PRIMARY KEY (movie_id, director_id),
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (director_id) REFERENCES Director(director_id) ON DELETE CASCADE
+);
+
+-- 10. Movie_Actor (Many-to-Many)
+CREATE TABLE Movie_Actor (
+    movie_id INT NOT NULL,
+    actor_id INT NOT NULL,
+    PRIMARY KEY (movie_id, actor_id),
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (actor_id) REFERENCES Actor(actor_id) ON DELETE CASCADE,
+    character_name VARCHAR(100)
+);
+
+-- 11. Movie_Genre (Many-to-Many)
+CREATE TABLE Movie_Genre (
+    movie_id INT NOT NULL,
+    genre_id INT NOT NULL,
+    PRIMARY KEY (movie_id, genre_id),
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (genre_id) REFERENCES Genre(genre_id) ON DELETE CASCADE
+);
+
+-- 12. Show_Genre (Many-to-Many)
+CREATE TABLE Show_Genre (
+    show_id INT NOT NULL,
+    genre_id INT NOT NULL,
+    PRIMARY KEY (show_id, genre_id),
+    FOREIGN KEY (show_id) REFERENCES tvshow(show_id) ON DELETE CASCADE,
+    FOREIGN KEY (genre_id) REFERENCES Genre(genre_id) ON DELETE CASCADE
+);
+
+-- OPTIONAL: Watchlist Table (for users to save movies/shows to watch later)
+
+CREATE TABLE Watchlist (
+    watchlist_id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    movie_id INT,
+    show_id INT,
+    added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    watched BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES User(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (show_id) REFERENCES tvshow(show_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_user_movie (user_id, movie_id),
+    UNIQUE KEY unique_user_show (user_id, show_id),
+    CHECK ((movie_id IS NOT NULL AND show_id IS NULL) OR (movie_id IS NULL AND show_id IS NOT NULL))
+);
+
+
+-- OPTIONAL: User Lists (custom lists like "My Favorite Thrillers")
+
+CREATE TABLE User_List (
+    list_id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    list_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_public BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES User(user_id) ON DELETE CASCADE
+);
+
+CREATE TABLE List_Items (
+    list_item_id INT PRIMARY KEY AUTO_INCREMENT,
+    list_id INT NOT NULL,
+    movie_id INT,
+    show_id INT,
+    added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (list_id) REFERENCES User_List(list_id) ON DELETE CASCADE,
+    FOREIGN KEY (movie_id) REFERENCES Movie(movie_id) ON DELETE CASCADE,
+    FOREIGN KEY (show_id) REFERENCES tvshow(show_id) ON DELETE CASCADE
+);
+*/
+
+-- OPTIONAL: Review Likes (users can like reviews)
+
+CREATE TABLE Review_Likes (
+    like_id INT PRIMARY KEY AUTO_INCREMENT,
+    review_id INT NOT NULL,
+    user_id INT NOT NULL,
+    liked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES Review(review_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES User(user_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_user_review_like (user_id, review_id)
+);
+
+CREATE TABLE User_Followers (
+    follower_id INT NOT NULL,
+    following_id INT NOT NULL,
+    followed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (follower_id, following_id),
+    FOREIGN KEY (follower_id) REFERENCES User(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (following_id) REFERENCES User(user_id) ON DELETE CASCADE,
+    CHECK (follower_id != following_id)
+);
+
